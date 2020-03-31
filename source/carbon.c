@@ -1,7 +1,10 @@
+#include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define MAX_LIST 0x10
@@ -75,11 +78,31 @@ void init()
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
 
-    LIST = mmap(0, sizeof(struct item) * MAX_LIST, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    if( LIST == (struct item*)-1 ) {
+    // generate a 40 bit random address
+    uint64_t addr = 0;
+    int fd = open("/dev/urandom", O_RDONLY);
+    if( read(fd, &addr, 5) < 0 )
+        a_crash();
+    close(fd);
+    addr &= ~0xFFF;
+
+    LIST = mmap((void*)addr, sizeof(struct item) * MAX_LIST, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
+    if( LIST != (struct item*)addr ) {
         echo("ERROR: Unable to mmap\n");
         a_crash();
     }
+    addr = 0;
+
+    #define WRITE_GOT 0x601F98
+    // clear all stack addresses in libc .BSS section
+    uint64_t* libc_bss = (uint64_t*)(*((uint64_t*)WRITE_GOT) - 0x5a3b5 + 0x292000);
+    libc_bss[0x2908/8] = 0;
+    libc_bss[0x2fd8/8] = 0;
+    libc_bss[0x3000/8] = 0;
+    libc_bss[0x3008/8] = 0;
+    libc_bss[0x31f8/8] = 0;
+    libc_bss[0x32f0/8] = 0;
+    libc_bss = 0;
 
     alarm(30);
 }
